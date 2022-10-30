@@ -1,0 +1,399 @@
+---
+title: "BBN Sentiments Analysis"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    horizontal_layout: scroll
+runtime: shiny
+---
+
+
+```{r}
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(shiny)
+library(shinydashboard)
+library(tidytext)
+library(flexdashboard)
+library(wordcloud2)
+
+tweets<- read_csv("bbn_tweets.csv") %>% mutate(Housemate = ifelse(is.na(Housemate), 'Unassigned', Housemate))
+
+options(scipen = 100, digits = 4)
+#tweets <- rename(tweets, Sentiments = sentiment)
+
+```
+
+
+
+
+
+Dashboard Overview {data-icon="fa-bar-chart"}
+=====================================
+
+
+Sidebar {.sidebar}
+--------------------------------------
+```{r}
+selectInput('housemate', "Housemate", c('All',unique(tweets$Housemate)))
+
+renderText('Choose an Housemate, to view their info on all pages')
+```
+
+
+## row {data-height=150}
+
+### Number of Negative tweets
+```{r}
+Tweets <- reactive({
+  if(input$housemate == 'All'){
+    tweets
+  } else {
+  tweets %>% filter(Housemate == input$housemate)}
+  })
+
+number_by_sentiments <- reactive({Tweets() %>%
+  group_by(sentiment) %>%
+  summarise(Number = n())
+  })
+
+
+renderValueBox({valueBox(format(number_by_sentiments()[[1, 2]], big.mark=','),
+                         icon = 'fa-face-smile-beam', color = "firebrick")})
+```
+
+### Number of Positive tweets
+```{r}
+
+renderValueBox({valueBox(format(number_by_sentiments()[[2, 2]], big.mark = ','), 
+                         icon = "fa-twitter",
+                         color = "forestgreen")})
+```
+
+### Total Number Of tweets
+```{r}
+renderValueBox({valueBox(format(nrow(Tweets()), big.mark = ','), icon = "fa-twitter-square", color = "darkorchid")})
+```
+
+### Number of Users
+```{r}
+user_count_mention <- reactive({n_distinct(Tweets()$Username)})
+
+renderValueBox({valueBox(format(user_count_mention(), big.mark=','), icon = "fa-users", color = "darkorchid")})
+```
+
+### Total Number Of Engagements
+```{r}
+engage <- reactive({
+            Tweets() %>%
+            summarise(retweets = sum(retweet_count, na.rm = TRUE), 
+            favourites = sum(favorite_count, na.rm = TRUE))
+  
+})
+  
+
+
+renderValueBox({
+  valueBox(format(nrow(Tweets()) + engage()$retweets + engage()$favourites, big.mark = ','), 
+                icon = "fa-twitter", color = "warning")
+  })
+```
+
+
+tabpanel {.tabset .tabset-fade}
+---------------------------------------------------------------
+
+### Sentiment Overview
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+renderPlot({Tweets() %>% 
+  group_by(sentiment) %>%
+  summarise(count = n()) %>%
+  mutate(percentage = count/sum(count) * 100) %>%
+  ggplot(aes(sentiment,percentage, fill=sentiment)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label = paste(round(percentage,2), "%", sep="")), nudge_y = 4, size=3) +
+  theme_minimal()})
+```
+
+### WordCloud
+
+```{r echo=FALSE}
+
+customstops <- reactive({
+  data.frame(word = c("null", "rt", "retweet", "follow", "dm", "don",
+                      "ve", "lol", "ll", "ii",    "konga", 'bbnaija', 
+                      'bbnaijas', "bellaokugbe",'na', 'didn', 'dey', 
+                      'groovymono', 'groovers', 'groophy', 'fans', 'chi', 
+                      'beautytukara', 'tukara','bellaokagbue','hermesx',
+                      'bbnaijas', 'girl', 'house', 'vote', 
+                      tolower(input$housemate)))
+  })
+
+words <-  reactive({ 
+            Tweets() %>%
+                   select(tweets) %>%
+                   unnest_tokens(word, tweets) %>%
+                   anti_join(stop_words, by = c("word" = "word")) %>%
+                   anti_join(customstops(), by = c("word" = "word")) %>% 
+                   count(word, sort=TRUE) %>% 
+                   filter(!is.na(word))
+  })
+
+                   
+
+
+
+renderWordcloud2(wordcloud2(data=head(words(), 50),
+                            size=1, 
+                            color='random-dark', 
+                            shape = 'pentagon'))
+```
+
+### Negative WordCloud
+
+```{r echo=FALSE}
+neg_words <-  reactive({Tweets() %>%
+                     filter(sentiment == 'Negative') %>%
+                     select(tweets) %>%
+                     unnest_tokens(word, tweets) %>%
+                     anti_join(stop_words, by = c("word" = "word")) %>%
+                     anti_join(customstops(), by = c("word" = "word")) %>%
+                     count(word, sort=TRUE) %>% 
+                     filter(!is.na(word))})
+
+                   
+
+
+
+
+renderWordcloud2(wordcloud2(data=head(neg_words(), 50),
+                            size=1.2,
+                            color='random-dark', 
+                            shape = 'pentagon'))
+```
+
+### Positive WordCloud
+
+```{r echo=FALSE}
+
+pos_words <-  reactive({Tweets() %>%
+                     filter(sentiment == 'Positive') %>%
+                     select(tweets) %>%
+                     unnest_tokens(word, tweets) %>%
+                     anti_join(stop_words, by = c("word" = "word")) %>%
+                     anti_join(customstops(), by = c("word" = "word")) %>%
+                     count(word, sort=TRUE) %>% 
+                     filter(!is.na(word))})
+
+
+
+renderWordcloud2(
+  wordcloud2(data=head(pos_words(), 50),
+                  size=1.5, 
+                  color='random-dark', 
+                  shape='pentagon')
+)
+```
+
+
+
+Word Analytics {data-icon="fa-comments"}
+=====================================
+
+## Row
+
+### Unique Words
+```{r}
+renderValueBox({valueBox(nrow(words()), icon = "fa-user", color = "darkorchid")})
+```
+
+
+### Unique tweets
+```{r}
+renderValueBox({valueBox(nrow(Tweets()), icon = "fa-close", color = "darkorchid")})
+```
+
+
+tabpanel {.tabset .tabset-fade}
+---------------------------------------------------------------
+
+### Popular Terms
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create a bar plot using terms with more than 60 counts
+renderPlot({ggplot(head(words(),20), aes(x = reorder(word, n), y = n)) + 
+  geom_bar(stat = "identity", fill = "purple") + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()})
+```
+
+
+### Top Negative Words
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+renderPlot({ggplot(head(neg_words(),20), aes(x = reorder(word, n), y = n)) + 
+  geom_bar(stat = "identity", fill = "firebrick", col = 'grey0') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()})
+```
+
+
+### Top Positive Words
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create a bar plot using terms with more than 60 counts
+
+renderPlot({ggplot(head(pos_words(),20), aes(x = reorder(word, n), y = n)) + 
+  geom_bar(stat = "identity", fill = "forestgreen", col = 'grey0') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()})
+```
+
+
+Engagement Analytics {data-icon="fa-retweet"}
+=====================================
+
+
+## row {data-height=150}
+
+
+### Number Of Retweets
+```{r}
+
+renderValueBox({valueBox(format(engage()$retweets, big.mark = ','),
+                         icon = "fa-envelope", 
+                         color = "skyblue")})
+```
+
+
+### Number Of Likes
+```{r}
+renderValueBox({valueBox(format(engage()$favourites, big.mark = ','), 
+                         icon = 'fa-heart', 
+                         color = "goldenrod")})
+```
+
+
+### Total Number Of Engagements
+```{r}
+renderValueBox({
+  valueBox(format(nrow(Tweets()) + engage()$retweets + engage()$favourites, big.mark = ','), 
+                icon = "fa-twitter", color = "info")
+  })
+```
+
+
+
+tabpanel {.tabset .tabset-fade}
+---------------------------------------------------------------
+
+### Retweet Total Engagement By Housemate
+```{r}
+engagements <- tweets %>%
+   filter(Housemate != 'Unassigned') %>%
+   group_by(Housemate) %>% 
+   summarise(tweet_count = n(), 
+             retweet_count = sum(retweet_count, na.rm = TRUE), 
+             favorite_count = sum(favorite_count, na.rm = TRUE),
+             engagement_count =  tweet_count + retweet_count + favorite_count)
+
+
+engagements %>% 
+  ggplot(aes(x = reorder(Housemate, engagement_count), y = engagement_count)) +
+  geom_bar(stat = "identity", fill = "darkolivegreen4", col =  'gray0') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()
+```
+
+
+### Retweets By Housemates
+```{r}
+engagements %>% 
+  ggplot(aes(x = reorder(Housemate, retweet_count), y = retweet_count)) +
+  geom_bar(stat = "identity", fill = "darkslategray3", col =  'gray0') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()
+```
+
+
+### Likes By Housemates
+```{r}
+engagements %>% 
+  ggplot(aes(x = reorder(Housemate, favorite_count), y = favorite_count)) +
+  geom_bar(stat = "identity", fill = "goldenrod", col =  'gray0') + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  ggtitle("Popular Terms") +
+  coord_flip() +
+  xlab("Words") +
+  ylab("Count") +
+  theme_bw()
+```
+
+
+
+View Tweets {data-icon="fa-twitter"}
+=====================================
+
+
+tabpanel {.tabset .tabset-fade}
+---------------------------------------------------------------
+
+### Positive Tweets
+```{r}
+renderDataTable({Tweets() %>%
+filter(sentiment == 'Positive') %>%
+select(Text, retweet_count, favorite_count)},
+options = list(
+scrollY = '300px', paging = FALSE)
+)
+```
+
+
+### Negative Tweets
+```{r}
+renderDataTable({Tweets() %>%
+filter(sentiment == 'Negative') %>%
+select(Text, retweet_count, favorite_count)},
+options = list(
+scrollY = '300px', paging = FALSE))
+```
+
+
+### Neutral Tweets
+```{r}
+renderDataTable({Tweets() %>%
+filter(sentiment == 'Neutral') %>%
+select(Text, retweet_count, favorite_count)},
+options = list(
+scrollY = '300px', paging = FALSE))
+```
+
+
+
+
+
+
