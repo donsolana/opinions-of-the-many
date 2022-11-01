@@ -4,7 +4,7 @@ Web Dashboard For The Big Brother Naija Sentiment Analysis Project.
 ## Introduction :wave:
 In this project I build on top of a [previous project](https://github.com/donsolana/BBN_Sentiments.py), it provides a user interface to analyse tweets from the previously concluded ***'Big Brother Naija'*** reality TV show.
 
-## Structure Of The App 
+## Structure Of The App :triangular_ruler:
 
 Its an R shiny App it is divided into four pages. 
 
